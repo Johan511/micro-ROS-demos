@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Microkit System Description for ping_pong_sel4
+  
+  This system demonstrates a simple ping-pong application.
+-->
+<system>
+    <!-- Shared memory region -->
+    <memory_region name="shared_mem" size="0x1_000" />
+
+    <!-- Protection Domain: ping_pong -->
+    <protection_domain name="ping_pong" priority="254">
+        <program_image path="ping_pong_component.elf" />
+        <map mr="shared_mem" vaddr="0x2_000_000" perms="rw" cached="true" setvar_vaddr="shared_mem_vaddr" />
+    </protection_domain>
+</system>

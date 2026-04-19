@@ -67,6 +67,7 @@ export_executable(epoch_synchronization)
 export_executable(parameter_server)
 # export_executable(configuration_example custom_transports)
 export_executable(multithread_publisher_subscriber)
+export_executable(ping_pong_sel4)
 
 if(EXISTS ${CMAKE_BINARY_DIR}/temp_install/)
     install(
