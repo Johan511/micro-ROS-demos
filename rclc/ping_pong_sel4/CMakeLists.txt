@@ -13,14 +13,8 @@ find_package(rclc REQUIRED)
 find_package(std_msgs REQUIRED)
 find_package(rmw_microxrcedds REQUIRED)
 
-# Native Microkit ping-pong application
-add_executable(${PROJECT_NAME}
-    ping_pong_component.c
-)
-
-target_link_libraries(${PROJECT_NAME}
-    microkit
-)
+add_executable(${PROJECT_NAME} ping_pong_component.c)
+target_link_libraries(${PROJECT_NAME} microkit)
 
 ament_target_dependencies(${PROJECT_NAME}
     rcl
@@ -30,12 +24,9 @@ ament_target_dependencies(${PROJECT_NAME}
     rmw_microxrcedds
 )
 
-# Installation
 install(TARGETS ${PROJECT_NAME}
     DESTINATION ${PROJECT_NAME}
 )
-
-# Install system description and build files
 install(FILES
     system.c
     Makefile

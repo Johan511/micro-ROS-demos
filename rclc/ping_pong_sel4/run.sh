@@ -1,8 +1,4 @@
 #!/bin/bash
-#
-# Run script for ping_pong_sel4 on QEMU
-#
-
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -17,12 +13,7 @@ if [ ! -f "$LOADER_IMG" ]; then
     exit 1
 fi
 
-echo "=== Running ping_pong_sel4 on QEMU ==="
 echo "Loader image: $LOADER_IMG"
-echo ""
-echo "Press Ctrl+A then X to exit QEMU"
-echo ""
-
 qemu-system-aarch64 \
     -machine virt,virtualization=on \
     -cpu cortex-a53 \
