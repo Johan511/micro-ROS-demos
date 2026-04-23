@@ -1,0 +1,17 @@
+#!/bin/sh
+# micro-ROS Agent init script for Linux VM on seL4
+
+# Ensure /run/network exists for ifup
+mkdir -p /run/network
+
+# Establish internet connection
+ifconfig eth0 up
+udhcpc eth0
+
+# Create /dev/mem device node if not present
+if [ ! -e /dev/mem ]; then
+    mknod /dev/mem c 1 1
+fi
+
+echo "Starting Micro-XRCE-DDS-Agent..."
+/bin/MicroXRCEAgent udp4 -p 8888 &

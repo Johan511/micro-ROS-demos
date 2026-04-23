@@ -14,6 +14,8 @@ TOOLCHAIN_VERSION="${TOOLCHAIN_VERSION:-12.2.rel1}"
 apt-get update
 apt-get install -y \
     gcc-aarch64-linux-gnu \
+    g++-aarch64-linux-gnu \
+    cpio \
     gdb-multiarch \
     qemu-system-arm \
     device-tree-compiler \
@@ -27,7 +29,7 @@ apt-get install -y \
     xz-utils
 
 MICROKIT_SDK="$INSTALL_DIR/microkit-sdk-$MICROKIT_VERSION"
-if [! -d "$MICROKIT_SDK" ]; then
+if [ ! -d "$MICROKIT_SDK" ]; then
     cd "$INSTALL_DIR"
     curl -L -o "microkit-sdk-${MICROKIT_VERSION}-linux-x86-64.tar.gz" \
         "https://github.com/seL4/microkit/releases/download/${MICROKIT_VERSION}/microkit-sdk-${MICROKIT_VERSION}-linux-x86-64.tar.gz"
@@ -36,12 +38,33 @@ if [! -d "$MICROKIT_SDK" ]; then
 fi
 
 TOOLCHAIN_DIR="$INSTALL_DIR/arm-gnu-toolchain-${TOOLCHAIN_VERSION}-x86_64-aarch64-none-elf"
-if [! -d "$TOOLCHAIN_DIR" ]; then
+if [ ! -d "$TOOLCHAIN_DIR" ]; then
     cd "$INSTALL_DIR"
     curl -L -o "arm-gnu-toolchain.tar.xz" \
         "https://developer.arm.com/-/media/Files/downloads/gnu/${TOOLCHAIN_VERSION}/binrel/arm-gnu-toolchain-${TOOLCHAIN_VERSION}-x86_64-aarch64-none-elf.tar.xz"
     tar -xf "arm-gnu-toolchain.tar.xz"
     rm "arm-gnu-toolchain.tar.xz"
+fi
+
+# Download VM images from microkit_tutorial if not present
+VM_IMAGES_DIR="$SCRIPT_DIR/vm_images"
+if [ ! -f "$VM_IMAGES_DIR/linux" ] || [ ! -f "$VM_IMAGES_DIR/linux.dtb" ] || [ ! -f "$VM_IMAGES_DIR/rootfs.cpio.gz" ]; then
+    echo "Downloading VM images from microkit_tutorial..."
+    mkdir -p "$VM_IMAGES_DIR"
+    TMP_DIR=$(mktemp -d)
+    cd "$TMP_DIR"
+    git clone --depth 1 https://github.com/au-ts/microkit_tutorial.git
+    cp microkit_tutorial/solutions/vmm/images/linux "$VM_IMAGES_DIR/"
+    cp microkit_tutorial/solutions/vmm/images/linux.dtb "$VM_IMAGES_DIR/"
+    cp microkit_tutorial/solutions/vmm/images/rootfs.cpio.gz "$VM_IMAGES_DIR/"
+    rm -rf "$TMP_DIR"
+    echo "VM images downloaded to $VM_IMAGES_DIR"
+fi
+
+# Preserve pristine original initrd so build can repack from a known-good base
+if [ -f "$VM_IMAGES_DIR/rootfs.cpio.gz" ] && [ ! -f "$VM_IMAGES_DIR/rootfs.cpio.gz.orig" ]; then
+    cp "$VM_IMAGES_DIR/rootfs.cpio.gz" "$VM_IMAGES_DIR/rootfs.cpio.gz.orig"
+    echo "Preserved original initrd as rootfs.cpio.gz.orig"
 fi
 
 export MICROKIT_SDK="$INSTALL_DIR/microkit-sdk-$MICROKIT_VERSION"
@@ -51,4 +74,4 @@ export PATH="$TOOLCHAIN_DIR/bin:$PATH"
 echo "Environment configured:"
 echo "  MICROKIT_SDK=$MICROKIT_SDK"
 echo "  TOOLCHAIN_DIR=$TOOLCHAIN_DIR"
-echo "  Added to PATH: $TOOLCHAIN_DIR/bin"
+echo "  PATH includes: $TOOLCHAIN_DIR/bin"

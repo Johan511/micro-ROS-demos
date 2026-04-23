@@ -14,10 +14,13 @@ if [ ! -f "$LOADER_IMG" ]; then
 fi
 
 echo "Loader image: $LOADER_IMG"
+echo "Starting QEMU with virtio-net (VM can access network)"
 qemu-system-aarch64 \
     -machine virt,virtualization=on \
     -cpu cortex-a53 \
     -nographic \
     -serial mon:stdio \
     -device loader,file="$LOADER_IMG",addr=0x70000000,cpu-num=0 \
-    -m size=2G
+    -m size=2G \
+    -netdev user,id=mynet0 \
+    -device virtio-net-device,netdev=mynet0,mac=52:55:00:d1:55:01
