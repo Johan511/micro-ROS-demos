@@ -42,9 +42,7 @@ build_agent() {
         return
     fi
 
-    echo "Building Micro-XRCE-DDS-Agent for aarch64..."
     mkdir -p "$AGENT_BUILD_DIR"
-
     if [ ! -d "$AGENT_SRC_DIR" ]; then
         echo "Cloning Micro-XRCE-DDS-Agent..."
         git clone --depth 1 --branch v2.4.3 \
@@ -52,7 +50,6 @@ build_agent() {
             "$AGENT_SRC_DIR"
     fi
 
-    # Write toolchain file on the fly
     printf '%s\n' \
         'set(CMAKE_SYSTEM_NAME Linux)' \
         'set(CMAKE_SYSTEM_PROCESSOR aarch64)' \
@@ -78,9 +75,8 @@ build_agent() {
     IFS="$OLDIFS"
 
     mkdir -p "$AGENT_SRC_DIR/build"
-    cd "$AGENT_SRC_DIR/build"
+    pushd "$AGENT_SRC_DIR/build"
 
-    # Strip ROS environment variables that poison the cross-build
     env -u CMAKE_PREFIX_PATH -u AMENT_PREFIX_PATH -u COLCON_PREFIX_PATH \
         -u LD_LIBRARY_PATH -u PYTHONPATH \
         PATH="$CLEAN_PATH" \
@@ -98,12 +94,10 @@ build_agent() {
 
     cp "$SCRIPT_DIR/$AGENT_SRC_DIR/build/MicroXRCEAgent" "$SCRIPT_DIR/$AGENT_BIN"
     echo "MicroXRCEAgent built successfully: $SCRIPT_DIR/$AGENT_BIN"
-    cd "$SCRIPT_DIR"
+
+    popd
 }
 
-# ------------------------------------------------------------------
-# Phase B: Repack initrd with the agent binary and init script
-# ------------------------------------------------------------------
 repack_initrd() {
     if [ ! -f "$AGENT_BIN" ]; then
         echo "ERROR: MicroXRCEAgent binary not found at $AGENT_BIN"
@@ -116,15 +110,8 @@ repack_initrd() {
         exit 1
     fi
 
-    # Skip repack if initrd is already newer than the agent binary
-    if [ -f "$INITRD_IMAGE" ] && [ "$INITRD_IMAGE" -nt "$AGENT_BIN" ]; then
-        echo "Initrd is already up to date"
-        return
-    fi
-
-    echo "Repacking initrd with MicroXRCEAgent..."
     TMP_INITRD=$(mktemp -d)
-    cd "$TMP_INITRD"
+    pushd "$TMP_INITRD"
 
     # Extract original initrd
     gunzip -c "$SCRIPT_DIR/$INITRD_ORIG" | cpio -idmv >/dev/null 2>&1
@@ -132,34 +119,19 @@ repack_initrd() {
     # Copy agent binary
     cp "$SCRIPT_DIR/$AGENT_BIN" bin/MicroXRCEAgent
     chmod +x bin/MicroXRCEAgent
-
-    # Copy init script
     cp "$SCRIPT_DIR/S60microros_agent" etc/init.d/S60microros_agent
     chmod +x etc/init.d/S60microros_agent
-
-    # Remove old Wordle script if present
-    rm -f etc/init.d/S60Wordle
-
-    # Ensure /run/network directory exists in the archive
-    mkdir -p run/network
 
     # Repack initrd
     find . -print0 | cpio --null -ov -H newc | gzip -9 > "$SCRIPT_DIR/$INITRD_IMAGE"
 
-    cd "$SCRIPT_DIR"
+    popd
     rm -rf "$TMP_INITRD"
     echo "Initrd repacked: $INITRD_IMAGE"
 }
 
-# ------------------------------------------------------------------
-# Run phases
-# ------------------------------------------------------------------
 build_agent
 repack_initrd
-
-# ------------------------------------------------------------------
-# Phase C: Build seL4 system
-# ------------------------------------------------------------------
 make BUILD_DIR="$BUILD_DIR" \
      MICROKIT_SDK="$MICROKIT_SDK" \
      MICROKIT_BOARD="$MICROKIT_BOARD" \
