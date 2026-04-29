@@ -1,51 +1,28 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <system>
-    <!-- UART for serial output (used by serial server or VM) -->
-    <memory_region name="uart" size="0x1_000" phys_addr="0x9_000_000"/>
-
-    <!-- Shared memory for cross-VM communication (ping-pong messages) -->
     <memory_region name="shared_mem" size="0x1_000" />
-
-    <!-- Guest RAM for the Linux VM (256MB at physical 0x40000000) -->
-    <memory_region name="guest_ram" size="0x1000_0000" page_size="0x200_000"
-        phys_addr="0x4000_0000" />
-
-    <!-- Ethernet device for VM networking (virtio-net) -->
-    <memory_region name="ethernet" size="0x1_000" phys_addr="0xa0_03_000" />
-
-    <!-- GIC vCPU interface (hardware virtualised) -->
+    <memory_region name="guest_ram" size="0x1000_0000" page_size="0x200_000" phys_addr="0x4000_0000" />
     <memory_region name="gic_vcpu" size="0x1_000" phys_addr="0x804_0000" />
+    <memory_region name="uart" size="0x1_000" phys_addr="0x900_0000" />
 
-    <!-- Protection Domain: ping_pong (native micro-ROS client) -->
     <protection_domain name="ping_pong" priority="254">
         <program_image path="ping_pong_component.elf" />
         <map mr="shared_mem" vaddr="0x2_000_000" perms="rw" cached="true"
             setvar_vaddr="shared_mem_vaddr" />
     </protection_domain>
 
-    <!-- Protection Domain: vmm (contains the Linux VM) -->
     <protection_domain name="vmm" priority="101">
         <program_image path="vmm.elf" />
-        <!-- VMM maps guest RAM to load kernel/DTB/initrd -->
         <map mr="guest_ram" vaddr="0x4000_0000" perms="rw"
             setvar_vaddr="guest_ram_vaddr" />
-        <!-- VMM also maps shared_mem to mediate if needed -->
         <map mr="shared_mem" vaddr="0x5000_0000" perms="rw" cached="true"
             setvar_vaddr="shared_mem_vaddr" />
-
-        <!-- The actual virtual machine -->
         <virtual_machine name="linux" priority="100">
             <vcpu id="0" />
             <map mr="guest_ram" vaddr="0x4000_0000" perms="rwx" />
-            <map mr="ethernet" vaddr="0xa0_03_000" perms="rw" cached="false" />
             <map mr="uart" vaddr="0x900_0000" perms="rw" cached="false" />
             <map mr="gic_vcpu" vaddr="0x801_0000" perms="rw" cached="false" />
-            <!-- Map shared_mem into VM at a known physical address -->
             <map mr="shared_mem" vaddr="0x5000_0000" perms="rw" cached="true" />
         </virtual_machine>
-
-        <!-- Ethernet IRQ passthrough (virtio-net on qemu_virt_aarch64) -->
-        <irq irq="79" id="2" trigger="edge" />
-        <irq irq="31" id="1" trigger="edge" />
     </protection_domain>
 </system>

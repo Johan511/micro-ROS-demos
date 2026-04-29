@@ -30,21 +30,5 @@
 #error Need to define VM image address and DTB address
 #endif
 
-#if defined(BOARD_qemu_virt_aarch64)
-#define SERIAL_IRQ_CH 1
-#define SERIAL_IRQ 33
-#elif defined(BOARD_odroidc2_hyp) || defined(BOARD_odroidc4_hyp)
-#define SERIAL_IRQ_CH 1
-#define SERIAL_IRQ 225
-#elif defined(BOARD_rpi4b_hyp)
-#define SERIAL_IRQ_CH 1
-#define SERIAL_IRQ 57
-#elif defined(BOARD_imx8mm_evk_hyp)
-#define SERIAL_IRQ_CH 1
-#define SERIAL_IRQ 79
-#else
-#error Need to define serial interrupt
-#endif
-
 bool guest_restart(void);
 void guest_stop(void);
