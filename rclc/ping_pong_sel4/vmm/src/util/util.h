@@ -8,6 +8,8 @@
 #pragma once
 
 #include <stdint.h>
+#include <string.h>
+#include <assert.h>
 #include <microkit.h>
 #include "printf.h"
 
@@ -30,32 +32,10 @@
 #define static_assert _Static_assert
 #endif
 
-//  __attribute__ ((__noreturn__))
-// void __assert_func(const char *file, int line, const char *function, const char *str);
-
 void _putchar(char character);
 
 #define LOG_VMM(...) do{ printf("%s|INFO: ", microkit_name); printf(__VA_ARGS__); }while(0)
 #define LOG_VMM_ERR(...) do{ printf("%s|ERROR: ", microkit_name); printf(__VA_ARGS__); }while(0)
-
-static char
-decchar(unsigned int v) {
-    return '0' + v;
-}
-
-static void
-put8(uint8_t x)
-{
-    char tmp[4];
-    unsigned i = 3;
-    tmp[3] = 0;
-    do {
-        uint8_t c = x % 10;
-        tmp[--i] = decchar(c);
-        x /= 10;
-    } while (x);
-    microkit_dbg_puts(&tmp[i]);
-}
 
 // @ivanv: sort this out...
 static void
@@ -155,36 +135,3 @@ print_vcpu_regs(uint64_t vcpu_id) {
     printf("    CNTVOFF: 0x%lx\n", microkit_vcpu_arm_read_reg(vcpu_id, seL4_VCPUReg_CNTVOFF));
     printf("    CNTKCTL_EL1: 0x%lx\n", microkit_vcpu_arm_read_reg(vcpu_id, seL4_VCPUReg_CNTKCTL_EL1));
 }
-
-static void *memcpy(void *restrict dest, const void *restrict src, size_t n)
-{
-    unsigned char *d = dest;
-    const unsigned char *s = src;
-    for (; n; n--) *d++ = *s++;
-    return dest;
-}
-
-static void *memset(void *dest, int c, size_t n)
-{
-    unsigned char *s = dest;
-    for (; n; n--, s++) *s = c;
-    return dest;
-}
-
-static void assert_fail(
-    const char  *assertion,
-    const char  *file,
-    unsigned int line,
-    const char  *function)
-{
-    printf("Failed assertion '%s' at %s:%u in function %s\n", assertion, file, line, function);
-    while (1) {}
-}
-
-#define assert(expr) \
-    do { \
-        if (!(expr)) { \
-            assert_fail(#expr, __FILE__, __LINE__, __FUNCTION__); \
-        } \
-    } while(0)
-

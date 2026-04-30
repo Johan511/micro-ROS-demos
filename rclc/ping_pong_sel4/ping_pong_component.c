@@ -1,5 +1,7 @@
 #include <stdint.h>
 #include <stdbool.h>
+#include <string.h>
+#include <stdio.h>
 #include <microkit.h>
 
 struct microros_time {
@@ -47,81 +49,9 @@ static uint32_t device_id = 0xABCD1234;
 static uint32_t pong_count = 0;
 static bool initialized = false;
 
-static void simple_strcpy(char *dest, const char *src)
-{
-    while ((*dest++ = *src++))
-        ;
-}
-
-static int simple_strcmp(const char *a, const char *b)
-{
-    while (*a && *a == *b) {
-        a++;
-        b++;
-    }
-    return (unsigned char)*a - (unsigned char)*b;
-}
-
-static void simple_itoa(char *buf, uint32_t val)
-{
-    int i = 0;
-    char tmp[12];
-    do {
-        tmp[i++] = '0' + (val % 10);
-        val /= 10;
-    } while (val);
-    int j = 0;
-    while (i > 0) {
-        buf[j++] = tmp[--i];
-    }
-    buf[j] = '\0';
-}
-
-static void simple_strcat(char *dest, const char *src)
-{
-    while (*dest)
-        dest++;
-    while ((*dest++ = *src++))
-        ;
-}
-
-static uint32_t simple_strlen(const char *s)
-{
-    uint32_t len = 0;
-    while (*s++)
-        len++;
-    return len;
-}
-
-static void put_hex64(uint64_t val)
-{
-    char buffer[19];
-    buffer[0] = '0';
-    buffer[1] = 'x';
-    buffer[18] = 0;
-    for (int i = 17; i > 1; i--) {
-        unsigned int v = val & 0xf;
-        buffer[i] = v < 10 ? '0' + v : ('a' - 10) + v;
-        val >>= 4;
-    }
-    microkit_dbg_puts(buffer);
-}
-
-static void putdec(uint32_t val)
-{
-    char buf[12];
-    simple_itoa(buf, val);
-    microkit_dbg_puts(buf);
-}
-
 static void build_frame_id(char *buf, uint32_t seq, uint32_t dev)
 {
-    buf[0] = '\0';
-    simple_itoa(buf, seq);
-    simple_strcat(buf, "_");
-    char devbuf[12];
-    simple_itoa(devbuf, dev);
-    simple_strcat(buf, devbuf);
+    snprintf(buf, 100, "%u_%u", seq, dev);
 }
 
 static void send_ping(void)
@@ -145,7 +75,7 @@ static void send_ping(void)
 
 static void send_pong(const char *frame_id)
 {
-    simple_strcpy(shared_mem->native_pong.frame_id, frame_id);
+    strcpy(shared_mem->native_pong.frame_id, frame_id);
     shared_mem->native_pong.stamp.sec = 0;
     shared_mem->native_pong.stamp.nanosec = 0;
 
@@ -163,7 +93,7 @@ static void handle_vm_ping(void)
     const char *frame_id = shared_mem->vm_ping.frame_id;
 
     /* Don't pong our own pings */
-    if (simple_strcmp(shared_mem->native_ping.frame_id, frame_id) != 0) {
+    if (strcmp(shared_mem->native_ping.frame_id, frame_id) != 0) {
         microkit_dbg_puts("Ping received with seq ");
         microkit_dbg_puts(frame_id);
         microkit_dbg_puts(". Answering.\n");
@@ -177,20 +107,24 @@ static void handle_vm_pong(void)
 {
     const char *frame_id = shared_mem->vm_pong.frame_id;
 
-    if (simple_strcmp(shared_mem->native_ping.frame_id, frame_id) == 0) {
+    if (strcmp(shared_mem->native_ping.frame_id, frame_id) == 0) {
         pong_count++;
         shared_mem->pong_received++;
 
+        char buf[32];
         microkit_dbg_puts("Pong for seq ");
         microkit_dbg_puts(frame_id);
         microkit_dbg_puts(" (");
-        putdec(pong_count);
+        snprintf(buf, sizeof(buf), "%u", pong_count);
+        microkit_dbg_puts(buf);
         microkit_dbg_puts(")\n");
     }
 }
 
 void init(void)
 {
+    char buf[32];
+
     microkit_dbg_puts("ping_pong: Initializing micro-ROS compatible ping-pong...\n");
 
     /* Set up shared memory pointer from the address provided by the system file */
@@ -205,7 +139,8 @@ void init(void)
     initialized = true;
 
     microkit_dbg_puts("ping_pong: Initialized, shared memory at ");
-    put_hex64((uint64_t)shared_mem);
+    snprintf(buf, sizeof(buf), "0x%016lx", (uint64_t)shared_mem);
+    microkit_dbg_puts(buf);
     microkit_dbg_puts("\n");
     microkit_dbg_puts("ping_pong: Message format: std_msgs/msg/Header compatible\n");
 
@@ -214,6 +149,8 @@ void init(void)
 
 void notified(microkit_channel ch)
 {
+    char buf[32];
+
     if (!initialized) {
         microkit_dbg_puts("ping_pong: Error - not initialized!\n");
         return;
@@ -233,7 +170,8 @@ void notified(microkit_channel ch)
 
         default:
             microkit_dbg_puts("ping_pong: Unknown channel ");
-            put_hex64(ch);
+            snprintf(buf, sizeof(buf), "0x%lx", ch);
+            microkit_dbg_puts(buf);
             microkit_dbg_puts("\n");
             break;
     }

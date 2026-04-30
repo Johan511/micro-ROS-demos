@@ -28,12 +28,19 @@ $(error Unsupported ARCH)
 endif
 
 CC := $(TARGET_TRIPLE)-gcc
-LD := $(TARGET_TRIPLE)-ld
+LD := $(TARGET_TRIPLE)-gcc
 MICROKIT_TOOL ?= $(MICROKIT_SDK)/bin/microkit
+
+MUSLLIBC_DIR ?= $(BUILD_DIR)/musllibc_src
+MUSLLIBC_BUILD_DIR ?= $(BUILD_DIR)/musllibc_build
 
 CFLAGS := -nostdlib -ffreestanding -g -O0 -Wall \
           -Wno-array-bounds -Wno-unused-variable -Wno-unused-function \
           -Werror \
+          -I$(MUSLLIBC_BUILD_DIR)/obj/include \
+          -I$(MUSLLIBC_DIR)/include \
+          -I$(MUSLLIBC_DIR)/arch/aarch64_sel4 \
+          -I$(MUSLLIBC_DIR)/arch/generic \
           -I$(BOARD_DIR)/include \
           -Ivmm/src/util \
           -Ivmm/src \
@@ -42,8 +49,10 @@ CFLAGS := -nostdlib -ffreestanding -g -O0 -Wall \
           -DBOARD_$(MICROKIT_BOARD) \
           $(CFLAGS_ARCH)
 
-LDFLAGS := -L$(BOARD_DIR)/lib
-LIBS := -lmicrokit -Tmicrokit.ld
+LDFLAGS := -L$(MUSLLIBC_BUILD_DIR)/lib -L$(BOARD_DIR)/lib -nostartfiles
+# link order of microkit and libc matters
+# we do not want libc overriding microkit
+LIBS := -lmicrokit -lc -Tmicrokit.ld
 
 IMAGE_FILE := $(BUILD_DIR)/loader.img
 REPORT_FILE := $(BUILD_DIR)/report.txt

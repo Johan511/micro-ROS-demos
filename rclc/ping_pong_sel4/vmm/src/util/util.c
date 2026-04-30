@@ -13,16 +13,3 @@ void _putchar(char character)
 {
     microkit_dbg_putc(character);
 }
-
- __attribute__ ((__noreturn__))
-void __assert_func(const char *file, int line, const char *function, const char *str)
-{
-    microkit_dbg_puts("assert failed: ");
-    microkit_dbg_puts(str);
-    microkit_dbg_puts(" ");
-    microkit_dbg_puts(file);
-    microkit_dbg_puts(" ");
-    microkit_dbg_puts(function);
-    microkit_dbg_puts("\n");
-    while (1) {}
-}

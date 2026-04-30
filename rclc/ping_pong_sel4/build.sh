@@ -33,8 +33,60 @@ AGENT_BIN="$AGENT_BUILD_DIR/MicroXRCEAgent"
 INITRD_ORIG="vm_images/rootfs.cpio.gz.orig"
 INITRD_IMAGE="vm_images/rootfs.cpio.gz"
 
+# musl libc build configuration
+MUSLLIBC_REPO="${MUSLLIBC_REPO:-https://github.com/seL4/musllibc.git}"
+MUSLLIBC_DIR="$SCRIPT_DIR/$BUILD_DIR/musllibc_src"
+MUSLLIBC_BUILD_DIR="$SCRIPT_DIR/$BUILD_DIR/musllibc_build"
+
 # ------------------------------------------------------------------
-# Phase A: Build Micro-XRCE-DDS-Agent (static aarch64 binary)
+# Phase A: Build musl libc (static aarch64 library)
+# ------------------------------------------------------------------
+build_musllibc() {
+    if [ -f "${MUSLLIBC_BUILD_DIR}/lib/libc.a" ]; then
+        echo "musllibc already built at ${MUSLLIBC_BUILD_DIR}/lib/libc.a"
+        return
+    fi
+
+    if [ ! -d "${MUSLLIBC_DIR}" ]; then
+        echo "Cloning musllibc from ${MUSLLIBC_REPO}..."
+        git clone --depth 1 "${MUSLLIBC_REPO}" "${MUSLLIBC_DIR}"
+    fi
+
+    mkdir -p "${MUSLLIBC_BUILD_DIR}"
+
+    if [ ! -f "${MUSLLIBC_BUILD_DIR}/config.mak" ]; then
+        echo "Configuring musllibc..."
+        pushd "${MUSLLIBC_BUILD_DIR}" > /dev/null
+        env \
+            SOURCE_DIR="${MUSLLIBC_DIR}" \
+            STAGE_DIR="${MUSLLIBC_BUILD_DIR}/install" \
+            CC=aarch64-linux-gnu-gcc \
+            AR=aarch64-linux-gnu-ar \
+            CROSS_COMPILE=aarch64-linux-gnu- \
+            "${MUSLLIBC_DIR}/configure" \
+            --srcdir="${MUSLLIBC_DIR}" \
+            --prefix="${MUSLLIBC_BUILD_DIR}/install" \
+            --target=aarch64 \
+            --enable-warnings \
+            --disable-shared \
+            --enable-static
+        popd > /dev/null
+    fi
+
+    echo "Building musllibc..."
+    make -C "${MUSLLIBC_BUILD_DIR}" \
+        SOURCE_DIR="${MUSLLIBC_DIR}" \
+        STAGE_DIR="${MUSLLIBC_BUILD_DIR}/install" \
+        CC=aarch64-linux-gnu-gcc \
+        AR=aarch64-linux-gnu-ar \
+        CROSS_COMPILE=aarch64-linux-gnu- \
+        -j"$(nproc)"
+
+    echo "musllibc built successfully"
+}
+
+# ------------------------------------------------------------------
+# Phase B: Build Micro-XRCE-DDS-Agent (static aarch64 binary)
 # ------------------------------------------------------------------
 build_agent() {
     if [ -f "$AGENT_BIN" ]; then
@@ -130,12 +182,15 @@ repack_initrd() {
     echo "Initrd repacked: $INITRD_IMAGE"
 }
 
+build_musllibc
 build_agent
 repack_initrd
 make BUILD_DIR="$BUILD_DIR" \
      MICROKIT_SDK="$MICROKIT_SDK" \
      MICROKIT_BOARD="$MICROKIT_BOARD" \
-     MICROKIT_CONFIG="$MICROKIT_CONFIG"
+     MICROKIT_CONFIG="$MICROKIT_CONFIG" \
+     MUSLLIBC_DIR="$MUSLLIBC_DIR" \
+     MUSLLIBC_BUILD_DIR="$MUSLLIBC_BUILD_DIR"
 
 echo ""
 echo "Build complete!"
