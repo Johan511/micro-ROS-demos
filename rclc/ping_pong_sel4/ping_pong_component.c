@@ -1,31 +1,7 @@
-/*
- * Copyright 2024, micro-ROS
- *
- * SPDX-License-Identifier: BSD-2-Clause
- */
-
-/*
- * Microkit Native Ping-Pong Component
- *
- * This component implements a ping-pong application using a message format
- * compatible with micro-ROS std_msgs/msg/Header. It communicates with the
- * Linux VM (running the micro-ROS agent) via shared memory.
- *
- * The message format matches std_msgs__msg__Header:
- *   - stamp.sec     : seconds
- *   - stamp.nanosec : nanoseconds
- *   - frame_id      : string (seq_device_id format)
- */
-
 #include <stdint.h>
 #include <stdbool.h>
 #include <microkit.h>
 
-/*
- * Message format compatible with std_msgs/msg/Header
- * This is a simplified version that matches the memory layout of the
- * micro-ROS Header message type.
- */
 struct microros_time {
     int32_t sec;
     uint32_t nanosec;
@@ -64,19 +40,13 @@ struct shared_microros_mem {
 /* Shared memory address set via setvar_vaddr in system file */
 uintptr_t shared_mem_vaddr;
 static struct shared_microros_mem *shared_mem;
-
-/* Channel to VMM */
 #define CHAN_VMM                1
 
-/* State */
 static uint32_t seq_no = 0;
 static uint32_t device_id = 0xABCD1234;
 static uint32_t pong_count = 0;
 static bool initialized = false;
 
-/*
- * Simple string functions (no libc in freestanding)
- */
 static void simple_strcpy(char *dest, const char *src)
 {
     while ((*dest++ = *src++))
@@ -123,20 +93,7 @@ static uint32_t simple_strlen(const char *s)
     return len;
 }
 
-/*
- * Simple pseudo-random number generator (LCG)
- */
-static uint32_t prng_state = 12345;
-static uint32_t simple_rand(void)
-{
-    prng_state = prng_state * 1103515245 + 12345;
-    return prng_state;
-}
-
-/*
- * Output helpers
- */
-static void puthex64(uint64_t val)
+static void put_hex64(uint64_t val)
 {
     char buffer[19];
     buffer[0] = '0';
@@ -157,10 +114,6 @@ static void putdec(uint32_t val)
     microkit_dbg_puts(buf);
 }
 
-/*
- * Build a frame_id string in the format "seq_device_id"
- * This matches the original Linux ping_pong application format.
- */
 static void build_frame_id(char *buf, uint32_t seq, uint32_t dev)
 {
     buf[0] = '\0';
@@ -171,12 +124,9 @@ static void build_frame_id(char *buf, uint32_t seq, uint32_t dev)
     simple_strcat(buf, devbuf);
 }
 
-/*
- * Send a ping message via shared memory
- */
 static void send_ping(void)
 {
-    seq_no = simple_rand();
+    seq_no = 0;
 
     build_frame_id(shared_mem->native_ping.frame_id, seq_no, device_id);
     shared_mem->native_ping.stamp.sec = 0;
@@ -193,9 +143,6 @@ static void send_ping(void)
     pong_count = 0;
 }
 
-/*
- * Send a pong response via shared memory
- */
 static void send_pong(const char *frame_id)
 {
     simple_strcpy(shared_mem->native_pong.frame_id, frame_id);
@@ -211,9 +158,6 @@ static void send_pong(const char *frame_id)
     microkit_dbg_puts("\n");
 }
 
-/*
- * Handle an incoming ping from the VM
- */
 static void handle_vm_ping(void)
 {
     const char *frame_id = shared_mem->vm_ping.frame_id;
@@ -229,9 +173,6 @@ static void handle_vm_ping(void)
     }
 }
 
-/*
- * Handle an incoming pong from the VM
- */
 static void handle_vm_pong(void)
 {
     const char *frame_id = shared_mem->vm_pong.frame_id;
@@ -248,9 +189,6 @@ static void handle_vm_pong(void)
     }
 }
 
-/*
- * Initialize the ping-pong component
- */
 void init(void)
 {
     microkit_dbg_puts("ping_pong: Initializing micro-ROS compatible ping-pong...\n");
@@ -267,18 +205,13 @@ void init(void)
     initialized = true;
 
     microkit_dbg_puts("ping_pong: Initialized, shared memory at ");
-    puthex64((uint64_t)shared_mem);
+    put_hex64((uint64_t)shared_mem);
     microkit_dbg_puts("\n");
     microkit_dbg_puts("ping_pong: Message format: std_msgs/msg/Header compatible\n");
 
-    /* Send initial ping */
     send_ping();
 }
 
-/*
- * Notification handler
- * Channel 1 is used by the VMM to notify us when the VM has data.
- */
 void notified(microkit_channel ch)
 {
     if (!initialized) {
@@ -288,51 +221,20 @@ void notified(microkit_channel ch)
 
     switch (ch) {
         case CHAN_VMM:
-            /* VM has potentially updated shared memory */
             if (shared_mem->vm_ready) {
-                /* Check for new ping from VM */
-                if (shared_mem->vm_to_native_seq > shared_mem->ping_received) {
+                if (shared_mem->vm_to_native_seq > shared_mem->ping_received)
                     handle_vm_ping();
-                }
-                /* Check for new pong from VM */
-                if (shared_mem->vm_to_native_seq > shared_mem->pong_received) {
+                if (shared_mem->vm_to_native_seq > shared_mem->pong_received)
                     handle_vm_pong();
-                }
                 shared_mem->vm_ready = 0;
-
-                /* Send next ping after processing */
                 send_ping();
             }
             break;
 
         default:
             microkit_dbg_puts("ping_pong: Unknown channel ");
-            puthex64(ch);
+            put_hex64(ch);
             microkit_dbg_puts("\n");
             break;
     }
-}
-
-/*
- * Protected procedure call handler
- * (not used in this example but required by Microkit API)
- */
-microkit_msginfo protected(microkit_channel ch, microkit_msginfo msginfo)
-{
-    (void)ch;
-    microkit_dbg_puts("ping_pong: Protected call received\n");
-    return msginfo;
-}
-
-/*
- * Fault handler
- * (required by Microkit API)
- */
-seL4_Bool fault(microkit_child child, microkit_msginfo msginfo, microkit_msginfo *reply_msginfo)
-{
-    (void)child;
-    (void)msginfo;
-    (void)reply_msginfo;
-    microkit_dbg_puts("ping_pong: Fault occurred!\n");
-    return seL4_False;
 }
