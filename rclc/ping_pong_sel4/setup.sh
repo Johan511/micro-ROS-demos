@@ -67,6 +67,14 @@ if [ -f "$VM_IMAGES_DIR/rootfs.cpio.gz" ] && [ ! -f "$VM_IMAGES_DIR/rootfs.cpio.
     echo "Preserved original initrd as rootfs.cpio.gz.orig"
 fi
 
+# Clone libvmm and its SDDF submodule
+LIBVMM_DIR="$SCRIPT_DIR/libvmm"
+if [ ! -d "$LIBVMM_DIR" ]; then
+    echo "Cloning libvmm..."
+    git clone --depth 1 --recurse-submodules https://github.com/au-ts/libvmm "$LIBVMM_DIR"
+    echo "libvmm cloned"
+fi
+
 export MICROKIT_SDK="$INSTALL_DIR/microkit-sdk-$MICROKIT_VERSION"
 export TOOLCHAIN_DIR="$INSTALL_DIR/arm-gnu-toolchain-${TOOLCHAIN_VERSION}-x86_64-aarch64-none-elf"
 export PATH="$TOOLCHAIN_DIR/bin:$PATH"

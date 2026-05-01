@@ -175,7 +175,7 @@ repack_initrd() {
     chmod +x etc/init.d/S60microros_agent
 
     # Repack initrd
-    find . -print0 | cpio --null -ov -H newc | gzip -9 > "$SCRIPT_DIR/$INITRD_IMAGE"
+    find . -print0 | cpio --null -o -H newc | gzip -9 > "$SCRIPT_DIR/$INITRD_IMAGE"
 
     popd
     rm -rf "$TMP_INITRD"

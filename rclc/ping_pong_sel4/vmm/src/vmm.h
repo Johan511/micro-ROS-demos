@@ -1,11 +1,5 @@
-#include <stdint.h>
+#pragma once
 
-// @ivanv: ideally we would have none of these hardcoded values
-// initrd, ram size come from the DTB
-// We can probably add a node for the DTB addr and then use that.
-// Part of the problem is that we might need multiple DTBs for the same example
-// e.g one DTB for VMM one, one DTB for VMM two. we should be able to hide all
-// of this in the build system to avoid doing any run-time DTB stuff.
 #if defined(BOARD_qemu_virt_aarch64)
 #define GUEST_DTB_VADDR 0x4f000000
 #define GUEST_INIT_RAM_DISK_VADDR 0x4d700000
@@ -29,6 +23,3 @@
 #else
 #error Need to define VM image address and DTB address
 #endif
-
-bool guest_restart(void);
-void guest_stop(void);
