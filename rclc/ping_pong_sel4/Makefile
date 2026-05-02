@@ -54,10 +54,14 @@ IMAGE_FILE := $(BUILD_DIR)/loader.img
 REPORT_FILE := $(BUILD_DIR)/report.txt
 
 KERNEL_IMAGE := vm_images/linux
+DTS_IMAGE := vm_images/linux.dts
 DTB_IMAGE := vm_images/linux.dtb
 INITRD_IMAGE := vm_images/rootfs.cpio.gz
 
 .DEFAULT_GOAL := all
+
+$(DTB_IMAGE): $(DTS_IMAGE)
+	dtc -I dts -O dtb -o $@ $<
 
 vpath %.c libvmm
 
