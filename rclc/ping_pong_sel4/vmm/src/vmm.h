@@ -23,3 +23,25 @@
 #else
 #error Need to define VM image address and DTB address
 #endif
+
+/* virtIO-net MMIO device: guest-physical base inside platform bus at 0xC100000 */
+#define VIRTIO_NET_MMIO_BASE    0xC100000
+#define VIRTIO_NET_MMIO_SIZE    0x200
+#define VIRTIO_NET_VIRQ         48
+
+/* Network queue configuration */
+#define NET_NUM_BUFFERS         16
+#define NET_BUF_SIZE            2048
+
+/* Fixed MAC and IP for VMM<->guest communication on the virtual network */
+#define VM_MAC_BYTES            { 0x02, 0x00, 0x00, 0x00, 0x00, 0x01 }
+#define VMM_MAC_BYTES           { 0x02, 0x00, 0x00, 0x00, 0x00, 0x02 }
+
+#define CHAN_PINGPONG           1
+
+struct shared_microros_mem {
+    volatile uint32_t native_to_vm_seq;
+    volatile uint32_t vm_to_native_seq;
+    volatile uint32_t native_ready;
+    volatile uint32_t vm_ready;
+};
