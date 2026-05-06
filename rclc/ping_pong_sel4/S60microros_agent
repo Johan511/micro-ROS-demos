@@ -5,5 +5,4 @@ if [ ! -e /dev/mem ]; then
     mknod /dev/mem c 1 1
 fi
 
-echo "Starting Micro-XRCE-DDS-Agent..."
 /bin/MicroXRCEAgent udp4 -p 8888 &

@@ -30,6 +30,7 @@ MICROKIT_CONFIG="${MICROKIT_CONFIG:-debug}"
 AGENT_BUILD_DIR="$BUILD_DIR/agent"
 AGENT_SRC_DIR="$AGENT_BUILD_DIR/src/Micro-XRCE-DDS-Agent"
 AGENT_BIN="$AGENT_BUILD_DIR/MicroXRCEAgent"
+VM_ECHO_BIN="$BUILD_DIR/vm_echo"
 INITRD_ORIG="vm_images/rootfs.cpio.gz.orig"
 INITRD_IMAGE="vm_images/rootfs.cpio.gz"
 
@@ -150,9 +151,19 @@ build_agent() {
     popd
 }
 
+build_vm_echo() {
+    aarch64-linux-gnu-gcc -static -o "$VM_ECHO_BIN" vm_echo.c
+    echo "vm_echo built successfully: $VM_ECHO_BIN"
+}
+
 repack_initrd() {
     if [ ! -f "$AGENT_BIN" ]; then
         echo "ERROR: MicroXRCEAgent binary not found at $AGENT_BIN"
+        exit 1
+    fi
+
+    if [ ! -f "$VM_ECHO_BIN" ]; then
+        echo "ERROR: vm_echo binary not found at $VM_ECHO_BIN"
         exit 1
     fi
 
@@ -174,6 +185,12 @@ repack_initrd() {
     cp "$SCRIPT_DIR/S60microros_agent" etc/init.d/S60microros_agent
     chmod +x etc/init.d/S60microros_agent
 
+    # Copy echo listener
+    cp "$SCRIPT_DIR/$VM_ECHO_BIN" bin/vm_echo
+    chmod +x bin/vm_echo
+    cp "$SCRIPT_DIR/S50echolistener" etc/init.d/S50echolistener
+    chmod +x etc/init.d/S50echolistener
+
     # Repack initrd
     find . -print0 | cpio --null -o -H newc | gzip -9 > "$SCRIPT_DIR/$INITRD_IMAGE"
 
@@ -184,6 +201,7 @@ repack_initrd() {
 
 build_musllibc
 build_agent
+build_vm_echo
 repack_initrd
 make BUILD_DIR="$BUILD_DIR" \
      MICROKIT_SDK="$MICROKIT_SDK" \
