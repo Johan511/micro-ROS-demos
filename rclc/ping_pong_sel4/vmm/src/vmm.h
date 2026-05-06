@@ -29,7 +29,7 @@
 /* virtIO-net MMIO device: guest-physical base inside platform bus at 0xC100000 */
 #define VIRTIO_NET_MMIO_BASE    0xC100000
 #define VIRTIO_NET_MMIO_SIZE    0x200
-#define VIRTIO_NET_VIRQ         48
+#define VIRTIO_NET_VIRQ         80
 
 /* Network queue configuration */
 #define NET_NUM_BUFFERS         16

@@ -39,7 +39,6 @@ int main(void)
     while (1) {
         struct sockaddr_in src;
         socklen_t srclen = sizeof(src);
-        printf("Waiting for recvfrom\n");
         int n = recvfrom(sock, buf, sizeof(buf) - 1, 0, (struct sockaddr*)&src, &srclen);
         if (n > 0) {
             buf[n] = '\0';

@@ -7,12 +7,26 @@
 
 static volatile shm_buffer_t *pp_comm_buffer;
 
-#define SWAP(x,y) do \ 
-   { unsigned char swap_temp[sizeof(x) == sizeof(y) ? (signed)sizeof(x) : -1]; \
-     memcpy(swap_temp,&y,sizeof(x)); \
-     memcpy(&y,&x,       sizeof(x)); \
-     memcpy(&x,swap_temp,sizeof(x)); \
+#define SWAP(x,y) do { \ 
+        unsigned char tmp[sizeof(x) == sizeof(y) ? (signed)sizeof(x) : -1]; \
+        memcpy(tmp, &y, sizeof(x)); \
+        memcpy(&y, &x, sizeof(x));  \
+        memcpy(&x, tmp, sizeof(x)); \
     } while(0)
+
+static uint16_t ip_chksum(struct iphdr *ip) {
+    uint32_t sum = 0;
+    uint16_t *buf = (uint16_t *)ip;
+    ip->check = 0;
+    int numBytes = ip->ihl /* num 4 byte words */ * 4;
+    for (int i = 0; i < numBytes / 2 /* num 2 byte words */; i++) {
+        sum += buf[i];
+    }
+    while (sum >> 16) {
+        sum = (sum & 0xFFFF) + (sum >> 16);
+    }
+    return ~sum;
+}
 
 void init(void)
 {
@@ -34,6 +48,9 @@ void notified(microkit_channel ch)
         SWAP(ipHdr->saddr, ipHdr->daddr);
         SWAP(udpHdr->uh_sport, udpHdr->uh_dport);
         
+        ipHdr->check = ip_chksum(ipHdr);
+        udpHdr->uh_sum = 0;
+
         microkit_dbg_puts("ping_pong: ping_pong -> vmm: '");
         microkit_dbg_puts(data + hdrs_len);
         microkit_dbg_puts("'\n");

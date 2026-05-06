@@ -1,5 +1,8 @@
 #!/bin/sh
+
 ip link set eth0 up
 ip addr add 10.0.2.15/24 dev eth0
-arp -s 10.0.2.100 02:00:00:00:00:01
+# otherwise linux will attempt ARP
+# needs to be something != linux_vm_mac
+arp -s 10.0.2.100 02:00:00:00:00:02
 /bin/vm_echo &
