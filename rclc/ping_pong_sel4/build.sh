@@ -39,6 +39,10 @@ MUSLLIBC_REPO="${MUSLLIBC_REPO:-https://github.com/seL4/musllibc.git}"
 MUSLLIBC_DIR="$SCRIPT_DIR/$BUILD_DIR/musllibc_src"
 MUSLLIBC_BUILD_DIR="$SCRIPT_DIR/$BUILD_DIR/musllibc_build"
 
+# micro-ROS cross-compilation output paths
+UROS_BUILD_DIR="$BUILD_DIR/uros"
+TOOLCHAIN_FILE="$UROS_BUILD_DIR/aarch64-none-elf-toolchain.cmake"
+
 # ------------------------------------------------------------------
 # Phase A: Build musl libc (static aarch64 library)
 # ------------------------------------------------------------------
@@ -199,16 +203,122 @@ repack_initrd() {
     echo "Initrd repacked: $INITRD_IMAGE"
 }
 
+build_uros_libs() {
+    if [ -f "$UROS_BUILD_DIR/lib/libmicroros.a" ]; then
+        echo "micro-ROS libraries already built at $UROS_BUILD_DIR/lib/libmicroros.a"
+        return
+    fi
+
+    if [ ! -f "${MUSLLIBC_BUILD_DIR}/lib/libc.a" ]; then
+        echo "ERROR: musllibc must be built first (Phase A)"
+        exit 1
+    fi
+
+    if [ ! -d /opt/ros/humble ]; then
+        echo "ERROR: ROS 2 Humble not found at /opt/ros/humble"
+        exit 1
+    fi
+
+    echo ""
+    echo "=== Phase D: Cross-compiling micro-ROS libraries for seL4 ==="
+
+    source /opt/ros/humble/setup.bash
+    if [ -f /microros_ws/install/setup.bash ]; then
+        source /microros_ws/install/setup.bash
+    fi
+
+    mkdir -p "$UROS_BUILD_DIR"
+
+    TOOLCHAIN_PREFIX="$INSTALL_DIR/arm-gnu-toolchain-${TOOLCHAIN_VERSION}-x86_64-aarch64-none-elf"
+    TOOLCHAIN_CC="${TOOLCHAIN_PREFIX}/bin/aarch64-none-elf-gcc"
+    TOOLCHAIN_CXX="${TOOLCHAIN_PREFIX}/bin/aarch64-none-elf-g++"
+
+    MUSLLIBC_INCLUDES="-I${MUSLLIBC_BUILD_DIR}/obj/include -I${MUSLLIBC_DIR}/include -I${MUSLLIBC_DIR}/arch/aarch64_sel4 -I${MUSLLIBC_DIR}/arch/generic"
+
+    cat > "$TOOLCHAIN_FILE" << TOOLCHAIN_EOF
+set(CMAKE_SYSTEM_NAME Generic)
+set(CMAKE_SYSTEM_PROCESSOR aarch64)
+set(CMAKE_TRY_COMPILE_TARGET_TYPE STATIC_LIBRARY)
+set(CMAKE_FIND_ROOT_PATH_MODE_PROGRAM NEVER)
+set(CMAKE_FIND_ROOT_PATH_MODE_LIBRARY ONLY)
+set(CMAKE_FIND_ROOT_PATH_MODE_INCLUDE ONLY)
+set(CMAKE_FIND_ROOT_PATH_MODE_PACKAGE ONLY)
+TOOLCHAIN_EOF
+
+    cat >> "$TOOLCHAIN_FILE" << EOF
+set(CMAKE_C_COMPILER ${TOOLCHAIN_CC})
+set(CMAKE_CXX_COMPILER ${TOOLCHAIN_CXX})
+set(CMAKE_C_FLAGS "-nostdlib -ffreestanding -mcpu=cortex-a53 -mstrict-align ${MUSLLIBC_INCLUDES} \${CMAKE_C_FLAGS}" CACHE STRING "" FORCE)
+set(CMAKE_CXX_FLAGS "-nostdlib -ffreestanding -mcpu=cortex-a53 -mstrict-align ${MUSLLIBC_INCLUDES} \${CMAKE_CXX_FLAGS}" CACHE STRING "" FORCE)
+EOF
+
+    echo "Toolchain file: $TOOLCHAIN_FILE"
+
+    FW_DIR="$SCRIPT_DIR/firmware"
+    if [ -d "$FW_DIR" ]; then
+        echo "Removing previous firmware workspace..."
+        rm -rf "$FW_DIR"
+    fi
+
+    echo "Creating micro-ROS firmware workspace (cloning repos)..."
+    pushd "$SCRIPT_DIR" > /dev/null
+    ros2 run micro_ros_setup create_firmware_ws.sh generate_lib
+    popd > /dev/null
+
+    echo "Configuring colcon.meta for seL4 (custom transport only)..."
+    python3 -c "
+import json
+with open('$FW_DIR/mcu_ws/colcon.meta') as f:
+    meta = json.load(f)
+meta['names']['microxrcedds_client']['cmake-args'] += [
+    '-DUCLIENT_PROFILE_UDP=OFF',
+    '-DUCLIENT_PROFILE_TCP=OFF',
+    '-DUCLIENT_PROFILE_SERIAL=OFF',
+    '-DUCLIENT_PROFILE_DISCOVERY=OFF',
+    '-DUCLIENT_PROFILE_CUSTOM_TRANSPORT=ON'
+]
+meta['names']['rmw_microxrcedds']['cmake-args'] += [
+    '-DRMW_UXRCE_TRANSPORT=custom'
+]
+with open('$FW_DIR/mcu_ws/colcon.meta', 'w') as f:
+    json.dump(meta, f, indent=4)
+"
+
+    echo "Cross-compiling with seL4 toolchain..."
+    pushd "$SCRIPT_DIR" > /dev/null
+    ros2 run micro_ros_setup build_firmware.sh "$(realpath "$TOOLCHAIN_FILE")"
+    popd > /dev/null
+
+    if [ -f "$FW_DIR/build/libmicroros.a" ]; then
+        mkdir -p "$UROS_BUILD_DIR/lib"
+        cp "$FW_DIR/build/libmicroros.a" "$UROS_BUILD_DIR/lib/"
+        echo "libmicroros.a installed to $UROS_BUILD_DIR/lib/"
+
+        mkdir -p "$UROS_BUILD_DIR/include"
+        cp -R "$FW_DIR/build/include/"* "$UROS_BUILD_DIR/include/" 2>/dev/null || true
+        echo "Headers installed to $UROS_BUILD_DIR/include/"
+    else
+        echo "ERROR: libmicroros.a not found at $FW_DIR/build/libmicroros.a"
+        echo "Build may have failed. Check output above."
+        exit 1
+    fi
+
+    echo "=== Phase D complete ==="
+    echo ""
+}
+
 build_musllibc
 build_agent
 build_vm_echo
 repack_initrd
+build_uros_libs
 make BUILD_DIR="$BUILD_DIR" \
      MICROKIT_SDK="$MICROKIT_SDK" \
      MICROKIT_BOARD="$MICROKIT_BOARD" \
      MICROKIT_CONFIG="$MICROKIT_CONFIG" \
      MUSLLIBC_DIR="$MUSLLIBC_DIR" \
-     MUSLLIBC_BUILD_DIR="$MUSLLIBC_BUILD_DIR"
+     MUSLLIBC_BUILD_DIR="$MUSLLIBC_BUILD_DIR" \
+     UROS_BUILD_DIR="$UROS_BUILD_DIR"
 
 echo ""
 echo "Build complete!"

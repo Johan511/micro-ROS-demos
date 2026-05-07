@@ -35,6 +35,7 @@ MICROKIT_TOOL ?= $(MICROKIT_SDK)/bin/microkit
 
 MUSLLIBC_DIR ?= $(BUILD_DIR)/musllibc_src
 MUSLLIBC_BUILD_DIR ?= $(BUILD_DIR)/musllibc_build
+UROS_BUILD_DIR ?= $(BUILD_DIR)/uros
 
 SDDF := libvmm/dep/sddf
 
@@ -45,10 +46,13 @@ CFLAGS := -nostdlib -ffreestanding -g -O0 -Wall \
           -I$(MUSLLIBC_DIR)/arch/aarch64_sel4 \
           -I$(MUSLLIBC_DIR)/arch/generic \
           -I$(BOARD_DIR)/include \
+          -I$(UROS_BUILD_DIR)/include \
           -DBOARD_$(MICROKIT_BOARD) \
+          -DRMW_UXRCE_TRANSPORT_CUSTOM \
+          -DBUILD_CUSTOM_TRANSPORT \
           $(CFLAGS_ARCH)
 
-LDFLAGS := -L$(MUSLLIBC_BUILD_DIR)/lib -L$(BOARD_DIR)/lib -nostartfiles
+LDFLAGS := -L$(MUSLLIBC_BUILD_DIR)/lib -L$(BOARD_DIR)/lib -L$(UROS_BUILD_DIR)/lib -nostartfiles
 
 IMAGE_FILE := $(BUILD_DIR)/loader.img
 REPORT_FILE := $(BUILD_DIR)/report.txt
@@ -87,7 +91,7 @@ $(BUILD_DIR)/global_data.o: vmm/src/global_data.S $(KERNEL_IMAGE) $(DTB_IMAGE) $
 		$< -o $@
 
 $(BUILD_DIR)/ping_pong_component.elf: $(BUILD_DIR)/ping_pong_component.o
-	$(LD) $(LDFLAGS) $^ -lmicrokit -lc -Tmicrokit.ld -o $@
+	$(LD) $(LDFLAGS) $^ -lmicroros -lmicrokit -lc -Tmicrokit.ld -o $@
 
 $(BUILD_DIR)/vmm.elf: $(BUILD_DIR)/vmm.o $(BUILD_DIR)/global_data.o libvmm.a libsddf_util_debug.a
 	$(LD) $(LDFLAGS) $(BUILD_DIR)/vmm.o $(BUILD_DIR)/global_data.o libvmm.a libsddf_util_debug.a -lmicrokit -lc -Tmicrokit.ld -o $@

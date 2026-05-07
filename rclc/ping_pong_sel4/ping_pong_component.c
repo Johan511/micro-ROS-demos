@@ -7,7 +7,7 @@
 
 static volatile shm_buffer_t *pp_comm_buffer;
 
-#define SWAP(x,y) do { \ 
+#define SWAP(x,y) do { \
         unsigned char tmp[sizeof(x) == sizeof(y) ? (signed)sizeof(x) : -1]; \
         memcpy(tmp, &y, sizeof(x)); \
         memcpy(&y, &x, sizeof(x));  \
