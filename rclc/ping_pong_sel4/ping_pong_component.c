@@ -4,56 +4,54 @@
 #include <netinet/in.h>
 #include <microkit.h>
 #include "common.h"
+#include "util/networking.h"
+#include "util/spsc_queue.h"
 
-static volatile shm_buffer_t *pp_comm_buffer;
 
-#define SWAP(x,y) do { \
-        unsigned char tmp[sizeof(x) == sizeof(y) ? (signed)sizeof(x) : -1]; \
-        memcpy(tmp, &y, sizeof(x)); \
-        memcpy(&y, &x, sizeof(x));  \
-        memcpy(&x, tmp, sizeof(x)); \
-    } while(0)
+char *pp2vmm;
+uint64_t pp2vmm_size = 0x100000;
+spsc_queue_t *spsc_pp2vmm;
 
-static uint16_t ip_chksum(struct iphdr *ip) {
-    uint32_t sum = 0;
-    uint16_t *buf = (uint16_t *)ip;
-    ip->check = 0;
-    int numBytes = ip->ihl /* num 4 byte words */ * 4;
-    for (int i = 0; i < numBytes / 2 /* num 2 byte words */; i++) {
-        sum += buf[i];
-    }
-    while (sum >> 16) {
-        sum = (sum & 0xFFFF) + (sum >> 16);
-    }
-    return ~sum;
-}
+char *vmm2pp;
+uint64_t vmm2pp_size = 0x100000;
+spsc_queue_t *spsc_vmm2pp;
+
+static ethhdr txEthHdr;
+static iphdr txIpHdr;
+static udphdr txUdpHdr;
 
 void init(void)
 {
     microkit_dbg_puts("ping_pong: Starting network verification test...\n");
+
+    txEthHdr = make_ethhdr("02:00:00:00:00:02", "02:00:00:00:00:01");
+    txIpHdr = make_iphdr("10.0.2.100", "10.0.2.15");
+    txUdpHdr = make_udphdr(54321, 12345);
+
+    spsc_pp2vmm = (spsc_queue_t *)pp2vmm;
+    assert(spsc_init(spsc_pp2vmm, pp2vmm + sizeof(spsc_queue_t), pp2vmm + pp2vmm_size, 11));
+    spsc_vmm2pp = (spsc_queue_t *)vmm2pp;
+    assert(spsc_init(spsc_vmm2pp, vmm2pp + sizeof(spsc_queue_t), vmm2pp + vmm2pp_size, 11));
+    microkit_dbg_puts("spsc_init done\n");
 }
 
 void notified(microkit_channel ch)
 {
     switch (ch) {
     case CHAN_PINGPONG: {
-        uint32_t len = pp_comm_buffer->size;
-        char *data = (char *)(pp_comm_buffer + 1);
+        char *txPktBuf = spsc_new_block(spsc_pp2vmm);
+        char *rxPkt = spsc_front_block(spsc_vmm2pp);
 
-        struct ethhdr *ethHdr = (ethhdr *)data;
-        struct iphdr *ipHdr = (iphdr *)(data + sizeof(ethhdr));
-        struct udphdr *udpHdr = (udphdr *)(data + sizeof(ethhdr) + sizeof(iphdr));
-
-        SWAP(ethHdr->h_dest, ethHdr->h_source);
-        SWAP(ipHdr->saddr, ipHdr->daddr);
-        SWAP(udpHdr->uh_sport, udpHdr->uh_dport);
+        char *payload = get_payload(rxPkt);
+        size_t payloadLen = get_payload_len(rxPkt);
+        make_pkt(txPktBuf, 2048, payload, payloadLen, &txEthHdr, &txIpHdr, &txUdpHdr);
         
-        ipHdr->check = ip_chksum(ipHdr);
-        udpHdr->uh_sum = 0;
-
-        microkit_dbg_puts("ping_pong: ping_pong -> vmm: '");
-        microkit_dbg_puts(data + hdrs_len);
+        microkit_dbg_puts("Received payload = '");
+        microkit_dbg_puts(payload);
         microkit_dbg_puts("'\n");
+
+        spsc_pop(spsc_vmm2pp);
+        spsc_push(spsc_pp2vmm);
 
         microkit_notify(CHAN_PINGPONG);
         break;

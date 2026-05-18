@@ -7,14 +7,27 @@
 #include <sddf/network/queue.h>
 #include <sddf/network/constants.h>
 #include "vmm.h"
+#include "../../util/spsc_queue.h"
+#include "../../util/networking.h"
 
 extern char _guest_kernel_image[], _guest_kernel_image_end[];
 extern char _guest_dtb_image[], _guest_dtb_image_end[];
 extern char _guest_initrd_image[], _guest_initrd_image_end[];
 
+#define PKT_SIZE 2048
+
+#define PP2VMM_SIZE 0x100000
+#define VMM2PP_SIZE 0x100000
+
+char *pp2vmm;
+spsc_queue_t *spsc_pp2vmm;
+
+char *vmm2pp;
+spsc_queue_t *spsc_vmm2pp;
+
 uintptr_t guest_ram_vaddr;
 uintptr_t net_bufs_vaddr;
-static volatile shm_buffer_t *pp_comm_buffer;
+
 static struct net_layout *net;
 
 /* virtIO-net device */
@@ -22,10 +35,6 @@ static struct virtio_net_device virtio_net;
 static net_queue_handle_t net_rx;
 static net_queue_handle_t net_tx;
 
-/* Network queue layout in net_bufs.
- * Each net_queue_t has a flexible array member buffers[] which must immediately
- * follow the struct for the queue code to access buffers correctly.
- */
 struct net_layout {
     struct {
         net_queue_t q;
@@ -54,18 +63,18 @@ static void process_tx_pending(void)
         uint8_t *pkt = net->tx_data + buf.io_or_offset;
         uint32_t len = buf.len;
 
-        memcpy((void *)(pp_comm_buffer + 1), pkt, len);
-        pp_comm_buffer->size = len;
-        LOG_VMM("vmm -> ping_pong, payload='%s'\n", pkt + hdrs_len);
+        char *newBlock = spsc_new_block(spsc_vmm2pp);
+        memcpy(newBlock, pkt, len);
 
+        spsc_push(spsc_vmm2pp);
         net_enqueue_free(&net_tx, buf);
         microkit_notify(CHAN_PINGPONG);
     }
 }
 
-static void send_pkt_to_guest(char *pkt, uint32_t len)
+static void send_pkt_to_guest()
 {
-    LOG_VMM("vmm -> vm, payload='%s'\n  ", pkt + hdrs_len);
+    char *pkt = spsc_front_block(spsc_pp2vmm);
     if (net_queue_empty_free(&net_rx)) {
         LOG_VMM_ERR("No free RX buffers, dropping packet\n");
         return;
@@ -73,18 +82,23 @@ static void send_pkt_to_guest(char *pkt, uint32_t len)
 
     net_buff_desc_t buf;
     net_dequeue_free(&net_rx, &buf);
-    memcpy(net->rx_data + buf.io_or_offset, pkt, len);
-    buf.len = len;
+    memcpy(net->rx_data + buf.io_or_offset, pkt, PKT_SIZE);
+    buf.len = PKT_SIZE;
     net_enqueue_active(&net_rx, buf);
     virtio_net_handle_rx(&virtio_net);
+    spsc_pop(spsc_pp2vmm);
 }
 
 void init(void)
 {
+    spsc_pp2vmm = (spsc_queue_t *)pp2vmm;
+    assert(spsc_init(spsc_pp2vmm, pp2vmm + sizeof(spsc_queue_t), pp2vmm + PP2VMM_SIZE, 11));
+    spsc_vmm2pp = (spsc_queue_t *)vmm2pp;
+    assert(spsc_init(spsc_vmm2pp, vmm2pp + sizeof(spsc_queue_t), vmm2pp + VMM2PP_SIZE, 11));
+    microkit_dbg_puts("spsc_init done\n");
+
     uint8_t vm_mac[6] = VM_MAC_ADDR;
     LOG_VMM("starting \"%s\"\n", microkit_name);
-
-    memset((void *)pp_comm_buffer, 0, 0x1000);
     memset((void *)net, 0, sizeof(struct net_layout));
 
     net_queue_init(&net_tx, &net->tx_free.q, &net->tx_active.q, NET_NUM_BUFFERS);
@@ -144,7 +158,7 @@ void notified(microkit_channel ch)
 {
     switch (ch) {
     case CHAN_PINGPONG:
-        send_pkt_to_guest((char *)(pp_comm_buffer + 1), pp_comm_buffer->size);
+        send_pkt_to_guest();
         break;
     default:
         LOG_VMM_ERR("Unexpected notification on channel: 0x%lx\n", ch);
