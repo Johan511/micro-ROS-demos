@@ -19,6 +19,7 @@ spsc_queue_t *spsc_vmm2pp;
 static ethhdr txEthHdr;
 static iphdr txIpHdr;
 static udphdr txUdpHdr;
+static bool guest_ready = false;
 
 void init(void)
 {
@@ -32,12 +33,29 @@ void init(void)
     assert(spsc_init(spsc_pp2vmm, pp2vmm + sizeof(spsc_queue_t), pp2vmm + pp2vmm_size, 11));
     spsc_vmm2pp = (spsc_queue_t *)vmm2pp;
     assert(spsc_init(spsc_vmm2pp, vmm2pp + sizeof(spsc_queue_t), vmm2pp + vmm2pp_size, 11));
-    microkit_dbg_puts("spsc_init done\n");
 }
 
 void notified(microkit_channel ch)
 {
     switch (ch) {
+    case CHAN_READY: {
+        if (guest_ready) {
+            break;
+        }
+        guest_ready = true;
+        microkit_dbg_puts("ping_pong: Guest is ready, sending first packet\n");
+
+        char *txPktBuf = spsc_new_block(spsc_pp2vmm);
+        const char payload[] = "HELLO";
+        make_pkt(txPktBuf, 2048, payload, sizeof(payload), &txEthHdr, &txIpHdr, &txUdpHdr);
+        microkit_dbg_puts("Sending payload = '");
+        microkit_dbg_puts(payload);
+        microkit_dbg_puts("'\n");
+        spsc_push(spsc_pp2vmm);
+
+        microkit_notify(CHAN_PINGPONG);
+        break;
+    }
     case CHAN_PINGPONG: {
         char *txPktBuf = spsc_new_block(spsc_pp2vmm);
         char *rxPkt = spsc_front_block(spsc_vmm2pp);
@@ -45,7 +63,7 @@ void notified(microkit_channel ch)
         char *payload = get_payload(rxPkt);
         size_t payloadLen = get_payload_len(rxPkt);
         make_pkt(txPktBuf, 2048, payload, payloadLen, &txEthHdr, &txIpHdr, &txUdpHdr);
-        
+
         microkit_dbg_puts("Received payload = '");
         microkit_dbg_puts(payload);
         microkit_dbg_puts("'\n");

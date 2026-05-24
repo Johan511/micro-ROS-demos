@@ -15,27 +15,17 @@ extern char _guest_dtb_image[], _guest_dtb_image_end[];
 extern char _guest_initrd_image[], _guest_initrd_image_end[];
 
 #define PKT_SIZE 2048
-
 #define PP2VMM_SIZE 0x100000
 #define VMM2PP_SIZE 0x100000
 
-char *pp2vmm;
-spsc_queue_t *spsc_pp2vmm;
-
-char *vmm2pp;
-spsc_queue_t *spsc_vmm2pp;
-
-uintptr_t guest_ram_vaddr;
-uintptr_t net_bufs_vaddr;
-
-static struct net_layout *net;
-
-/* virtIO-net device */
+char *pp2vmm, *vmm2pp;
+spsc_queue_t *spsc_pp2vmm, *spsc_vmm2pp;
+uintptr_t guestRam;
+static struct network_ctx_t *networkCtx;
 static struct virtio_net_device virtio_net;
-static net_queue_handle_t net_rx;
-static net_queue_handle_t net_tx;
+static net_queue_handle_t net_rx, net_tx;
 
-struct net_layout {
+typedef struct network_ctx_t {
     struct {
         net_queue_t q;
         net_buff_desc_t bufs[NET_NUM_BUFFERS];
@@ -54,13 +44,25 @@ struct net_layout {
     } rx_active;
     uint8_t tx_data[NET_NUM_BUFFERS * NET_BUF_SIZE] __attribute__((aligned(64)));
     uint8_t rx_data[NET_NUM_BUFFERS * NET_BUF_SIZE] __attribute__((aligned(64)));
-};
+} network_ctx_t;
+
+static bool ready_signal_sent = false;
+
+static bool ready_signal_handler(size_t vcpu_id, size_t offset, size_t fsr, seL4_UserContext *regs, void *data)
+{
+    if (fault_is_write(fsr) && !ready_signal_sent) {
+        ready_signal_sent = true;
+        LOG_VMM("Guest signaled readiness, notifying ping_pong PD\n");
+        microkit_notify(CHAN_READY);
+    }
+    return true;
+}
 
 static void process_tx_pending(void)
 {
     net_buff_desc_t buf;
     while (net_dequeue_active(&net_tx, &buf) != -1) {
-        uint8_t *pkt = net->tx_data + buf.io_or_offset;
+        uint8_t *pkt = networkCtx->tx_data + buf.io_or_offset;
         uint32_t len = buf.len;
 
         char *newBlock = spsc_new_block(spsc_vmm2pp);
@@ -82,8 +84,10 @@ static void send_pkt_to_guest()
 
     net_buff_desc_t buf;
     net_dequeue_free(&net_rx, &buf);
-    memcpy(net->rx_data + buf.io_or_offset, pkt, PKT_SIZE);
+
+    memcpy(networkCtx->rx_data + buf.io_or_offset, pkt, PKT_SIZE);
     buf.len = PKT_SIZE;
+    
     net_enqueue_active(&net_rx, buf);
     virtio_net_handle_rx(&virtio_net);
     spsc_pop(spsc_pp2vmm);
@@ -99,11 +103,11 @@ void init(void)
 
     uint8_t vm_mac[6] = VM_MAC_ADDR;
     LOG_VMM("starting \"%s\"\n", microkit_name);
-    memset((void *)net, 0, sizeof(struct net_layout));
+    memset((void *)networkCtx, 0, sizeof(struct network_ctx_t));
 
-    net_queue_init(&net_tx, &net->tx_free.q, &net->tx_active.q, NET_NUM_BUFFERS);
+    net_queue_init(&net_tx, &networkCtx->tx_free.q, &networkCtx->tx_active.q, NET_NUM_BUFFERS);
     net_cancel_signal_active(&net_tx);
-    net_queue_init(&net_rx, &net->rx_free.q, &net->rx_active.q, NET_NUM_BUFFERS);
+    net_queue_init(&net_rx, &networkCtx->rx_free.q, &networkCtx->rx_active.q, NET_NUM_BUFFERS);
 
     for (uint32_t i = 0; i < NET_NUM_BUFFERS; i++) {
         net_buff_desc_t b = { .io_or_offset = i * NET_BUF_SIZE, .len = 0 };
@@ -114,11 +118,10 @@ void init(void)
         net_enqueue_free(&net_rx, b);
     }
 
-    /* Set up the Linux guest images */
     size_t kernel_size = _guest_kernel_image_end - _guest_kernel_image;
     size_t dtb_size = _guest_dtb_image_end - _guest_dtb_image;
     size_t initrd_size = _guest_initrd_image_end - _guest_initrd_image;
-    uintptr_t kernel_pc = linux_setup_images(guest_ram_vaddr,
+    uintptr_t kernel_pc = linux_setup_images(guestRam,
                                              (uintptr_t)_guest_kernel_image, kernel_size,
                                              (uintptr_t)_guest_dtb_image, GUEST_DTB_VADDR, dtb_size,
                                              (uintptr_t)_guest_initrd_image, GUEST_INIT_RAM_DISK_VADDR, initrd_size);
@@ -137,20 +140,25 @@ void init(void)
                                    VIRTIO_NET_VIRQ,
                                    &net_rx,
                                    &net_tx,
-                                   (uintptr_t)net->rx_data,
-                                   (uintptr_t)net->tx_data,
+                                   (uintptr_t)networkCtx->rx_data,
+                                   (uintptr_t)networkCtx->tx_data,
                                    CHAN_PINGPONG,
                                    CHAN_PINGPONG,
                                    vm_mac);
     if (!success) {
-        LOG_VMM_ERR("Failed to initialise virtIO-net device\n");
+        LOG_VMM_ERR("Failed to initialise virtIO-networkCtx device\n");
         return;
     }
 
-    LOG_VMM("virtIO-net initialized at MMIO 0x%x, vIRQ %u\n",
-            VIRTIO_NET_MMIO_BASE, VIRTIO_NET_VIRQ);
-    LOG_VMM("VM MAC: %02x:%02x:%02x:%02x:%02x:%02x\n",
-            vm_mac[0], vm_mac[1], vm_mac[2], vm_mac[3], vm_mac[4], vm_mac[5]);
+    success = fault_register_vm_exception_handler(READY_SIGNAL_MMIO_BASE,
+                                                  READY_SIGNAL_MMIO_SIZE,
+                                                  ready_signal_handler,
+                                                  NULL);
+    if (!success) {
+        LOG_VMM_ERR("Failed to register readiness signal handler\n");
+        return;
+    }
+
     guest_start(kernel_pc, GUEST_DTB_VADDR, GUEST_INIT_RAM_DISK_VADDR);
 }
 
@@ -170,7 +178,6 @@ seL4_Bool fault(microkit_child child, microkit_msginfo msginfo, microkit_msginfo
 {
     bool success = fault_handle(child, msginfo);
     if (success) {
-        /* Process any pending TX data after handling the fault */
         process_tx_pending();
         *reply_msginfo = microkit_msginfo_new(0, 0);
         return seL4_True;

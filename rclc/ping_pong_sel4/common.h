@@ -6,6 +6,7 @@
 #include <stdio.h>
 
 #define CHAN_PINGPONG 1
+#define CHAN_READY 2
 
 typedef struct shm_buffer_t {
     uint64_t size;

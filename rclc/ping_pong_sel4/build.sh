@@ -31,6 +31,7 @@ AGENT_BUILD_DIR="$BUILD_DIR/agent"
 AGENT_SRC_DIR="$AGENT_BUILD_DIR/src/Micro-XRCE-DDS-Agent"
 AGENT_BIN="$AGENT_BUILD_DIR/MicroXRCEAgent"
 VM_ECHO_BIN="$BUILD_DIR/vm_echo"
+IS_PORT_OPEN_BIN="$BUILD_DIR/is_port_open"
 INITRD_ORIG="vm_images/rootfs.cpio.gz.orig"
 INITRD_IMAGE="vm_images/rootfs.cpio.gz"
 
@@ -160,6 +161,11 @@ build_vm_echo() {
     echo "vm_echo built successfully: $VM_ECHO_BIN"
 }
 
+build_is_port_open() {
+    aarch64-linux-gnu-gcc -static -o "$IS_PORT_OPEN_BIN" is_port_open.c
+    echo "is_port_open built successfully: $IS_PORT_OPEN_BIN"
+}
+
 repack_initrd() {
     if [ ! -f "$AGENT_BIN" ]; then
         echo "ERROR: MicroXRCEAgent binary not found at $AGENT_BIN"
@@ -168,6 +174,11 @@ repack_initrd() {
 
     if [ ! -f "$VM_ECHO_BIN" ]; then
         echo "ERROR: vm_echo binary not found at $VM_ECHO_BIN"
+        exit 1
+    fi
+
+    if [ ! -f "$IS_PORT_OPEN_BIN" ]; then
+        echo "ERROR: is_port_open binary not found at $IS_PORT_OPEN_BIN"
         exit 1
     fi
 
@@ -194,6 +205,13 @@ repack_initrd() {
     chmod +x bin/vm_echo
     cp "$SCRIPT_DIR/S50echolistener" etc/init.d/S50echolistener
     chmod +x etc/init.d/S50echolistener
+
+    cp "$SCRIPT_DIR/$IS_PORT_OPEN_BIN" bin/is_port_open
+    chmod +x bin/is_port_open
+
+    if [ ! -e dev/mem ]; then
+        mknod dev/mem c 1 1
+    fi
 
     # Repack initrd
     find . -print0 | cpio --null -o -H newc | gzip -9 > "$SCRIPT_DIR/$INITRD_IMAGE"
@@ -310,6 +328,7 @@ with open('$FW_DIR/mcu_ws/colcon.meta', 'w') as f:
 build_musllibc
 build_agent
 build_vm_echo
+build_is_port_open
 repack_initrd
 build_uros_libs
 make BUILD_DIR="$BUILD_DIR" \

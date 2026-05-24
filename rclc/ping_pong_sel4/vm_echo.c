@@ -33,8 +33,7 @@ int main(void)
     dest.sin_addr.s_addr = inet_addr("10.0.2.100");
     socklen_t destlen = sizeof(dest);
 
-    char buf[1500] = {'A', 'B', 'C', 'D', 'E'};
-    sendto(sock, buf, 5, 0, (struct sockaddr*)&dest, destlen);
+    char buf[1500] = {0};
 
     while (1) {
         struct sockaddr_in src;

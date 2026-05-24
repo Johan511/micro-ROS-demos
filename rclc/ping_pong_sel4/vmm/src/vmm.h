@@ -37,3 +37,7 @@
 
 #define VM_MAC_ADDR            { 0x02, 0x00, 0x00, 0x00, 0x00, 0x01 }
 #define CHAN_PINGPONG           1
+#define CHAN_READY              2
+
+#define READY_SIGNAL_MMIO_BASE  0xC200000
+#define READY_SIGNAL_MMIO_SIZE  0x1000

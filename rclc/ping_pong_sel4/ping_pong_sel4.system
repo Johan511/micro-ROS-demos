@@ -15,10 +15,10 @@
 
     <protection_domain name="vmm" priority="101">
         <program_image path="vmm.elf" />
-        <map mr="guest_ram" vaddr="0x4_000_0000" perms="rw" setvar_vaddr="guest_ram_vaddr" />
+        <map mr="guest_ram" vaddr="0x4_000_0000" perms="rw" setvar_vaddr="guestRam" />
         <map mr="pp2vmm" vaddr="0x5_000_000" perms="rw" cached="false" setvar_vaddr="pp2vmm" />
         <map mr="vmm2pp" vaddr="0x5_100_000" perms="rw" cached="false" setvar_vaddr="vmm2pp" />
-        <map mr="net_bufs" vaddr="0x5_200_0000" perms="rw" cached="true" setvar_vaddr="net" />
+        <map mr="net_bufs" vaddr="0x5_200_0000" perms="rw" cached="true" setvar_vaddr="networkCtx" />
         <virtual_machine name="linux" priority="100">
             <vcpu id="0" />
             <map mr="guest_ram" vaddr="0x40_000_000" perms="rwx" />
@@ -30,5 +30,9 @@
     <channel>
         <end pd="vmm" id="1" />
         <end pd="ping_pong" id="1" />
+    </channel>
+    <channel>
+        <end pd="vmm" id="2" />
+        <end pd="ping_pong" id="2" />
     </channel>
 </system>
