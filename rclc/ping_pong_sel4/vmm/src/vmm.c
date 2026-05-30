@@ -77,11 +77,6 @@ static void process_tx_pending(void)
 static void send_pkt_to_guest()
 {
     char *pkt = spsc_front_block(spsc_pp2vmm);
-    if (net_queue_empty_free(&net_rx)) {
-        LOG_VMM_ERR("No free RX buffers, dropping packet\n");
-        return;
-    }
-
     net_buff_desc_t buf;
     net_dequeue_free(&net_rx, &buf);
 
@@ -166,7 +161,9 @@ void notified(microkit_channel ch)
 {
     switch (ch) {
     case CHAN_PINGPONG:
-        send_pkt_to_guest();
+        while (!spsc_empty(spsc_pp2vmm)) {
+            send_pkt_to_guest();
+        }
         break;
     default:
         LOG_VMM_ERR("Unexpected notification on channel: 0x%lx\n", ch);

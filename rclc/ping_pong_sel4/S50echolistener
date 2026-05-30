@@ -5,5 +5,4 @@ ip addr add 10.0.2.15/24 dev eth0
 # otherwise linux will attempt ARP
 # needs to be something != linux_vm_mac
 arp -s 10.0.2.100 02:00:00:00:00:02
-/bin/vm_echo &
-/bin/is_port_open 12345
+# /bin/vm_echo &

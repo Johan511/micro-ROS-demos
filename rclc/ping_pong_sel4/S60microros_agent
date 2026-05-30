@@ -6,3 +6,4 @@ if [ ! -e /dev/mem ]; then
 fi
 
 /bin/MicroXRCEAgent udp4 -p 8888 &
+/bin/is_port_open 8888

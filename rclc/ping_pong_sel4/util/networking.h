@@ -22,7 +22,7 @@ static void set_ip_chksum(struct iphdr *ip) {
     ip->check = ~sum;
 }
 
-void make_pkt(char *outBuf, size_t outBufLen, char *payload, size_t payloadLen,
+void make_pkt(char *outBuf, size_t outBufLen, const char *payload, size_t payloadLen,
             const ethhdr* ethHdr, const iphdr *ipHdr, const udphdr *udpHdr)
 {
     ethhdr *pktEthHdr = (ethhdr *)(outBuf);
@@ -88,35 +88,38 @@ ethhdr make_ethhdr(const char *srcMac, const char *dstMac)
     return ethHdr;
 }
 
+bool is_udp(const char *pkt)
+{
+    const ethhdr *ethHdr = (const ethhdr *)(pkt);
+    const iphdr *ipHdr = (const iphdr *)(pkt + sizeof(ethhdr));
+    return ipHdr->protocol == IPPROTO_UDP;
+}
+
 size_t get_payload_len(const char *pkt)
 {
+    assert(is_udp(pkt));
     const udphdr *udpHdr = (const udphdr *)(pkt + sizeof(ethhdr) + sizeof(iphdr));
     return ntohs(udpHdr->uh_ulen) - sizeof(udpHdr);
 }
 
 size_t pkt_len(const char *pkt)
 {
+    assert(is_udp(pkt));
     return sizeof(ethhdr) + sizeof(iphdr) + sizeof(udphdr) + get_payload_len(pkt);
 }
 
 char *get_payload(char *pkt)
 {
+    assert(is_udp(pkt));
     return pkt + sizeof(ethhdr) + sizeof(iphdr) + sizeof(udphdr);
 }
 
 size_t put_pkt_hex(char *outBuf, const char *pkt, size_t pktLen)
 {
-    if(pktLen >= sizeof(ethhdr) + sizeof(iphdr) + sizeof(udphdr))
-    {
-        const udphdr *udpHdr = (udphdr *)(outBuf + sizeof(ethhdr) + sizeof(iphdr));
-        size_t udpLen = udpHdr->uh_ulen;
-        if(pktLen < udpLen + sizeof(iphdr) + sizeof(ethhdr))
-            pktLen = udpLen + sizeof(iphdr) + sizeof(ethhdr);
-    }
-
     size_t bytesPrinted = 0;
-    for(size_t i = 0; i < pktLen; i++)
-        bytesPrinted += sprintf(outBuf + bytesPrinted, "%02x ", pkt[i]);
+    for(size_t i = 0; i < pktLen; i++) {
+        bytesPrinted += sprintf(outBuf + bytesPrinted, "%02x ", (uint8_t)pkt[i]);
+    }
 
     return bytesPrinted;   
 }

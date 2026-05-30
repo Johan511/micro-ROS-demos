@@ -237,13 +237,48 @@ build_uros_libs() {
         exit 1
     fi
 
+    FW_DIR="$SCRIPT_DIR/firmware"
+    if [ ! -d "$FW_DIR" ]; then
+        echo "ERROR: firmware workspace not found at $FW_DIR"
+        echo "Run ./setup.sh first to clone micro-ROS repos (including rclc)"
+        exit 1
+    fi
+
+    if [ ! -f "$FW_DIR/dev_ws/install/setup.bash" ]; then
+        echo "ERROR: dev_ws not built. Run ./setup.sh first."
+        exit 1
+    fi
+
     echo ""
-    echo "=== Phase D: Cross-compiling micro-ROS libraries for seL4 ==="
+    echo "=== Phase D: Cross-compiling micro-ROS libraries for seL4 (with debug symbols) ==="
 
     source /opt/ros/humble/setup.bash
     if [ -f /microros_ws/install/setup.bash ]; then
         source /microros_ws/install/setup.bash
     fi
+
+    PREFIXES_TO_CLEAN="$AMENT_PREFIX_PATH"
+    clean() {
+        echo "$(echo $(echo "$1" | sed 's/:/\n/g' | \
+            grep -v -E "($(echo "$PREFIXES_TO_CLEAN" | sed 's/:/\|/g'))") | sed 's/ /:/g')"
+    }
+    if [ -n "${LD_LIBRARY_PATH-}" ]; then
+        MRS_TEMP=$(clean "$LD_LIBRARY_PATH")
+        [ -n "$MRS_TEMP" ] && export LD_LIBRARY_PATH="$MRS_TEMP" || unset LD_LIBRARY_PATH
+    fi
+    if [ -n "${CMAKE_PREFIX_PATH-}" ]; then
+        MRS_TEMP=$(clean "$CMAKE_PREFIX_PATH")
+        [ -n "$MRS_TEMP" ] && export CMAKE_PREFIX_PATH="$MRS_TEMP" || unset CMAKE_PREFIX_PATH
+    fi
+    if [ -n "${PYTHONPATH-}" ]; then
+        MRS_TEMP=$(clean "$PYTHONPATH")
+        [ -n "$MRS_TEMP" ] && export PYTHONPATH="$MRS_TEMP" || unset PYTHONPATH
+    fi
+    export PATH=$(clean "$PATH")
+    unset AMENT_PREFIX_PATH
+    unset COLCON_PREFIX_PATH
+
+    source "$FW_DIR/dev_ws/install/setup.bash"
 
     mkdir -p "$UROS_BUILD_DIR"
 
@@ -261,50 +296,62 @@ set(CMAKE_FIND_ROOT_PATH_MODE_PROGRAM NEVER)
 set(CMAKE_FIND_ROOT_PATH_MODE_LIBRARY ONLY)
 set(CMAKE_FIND_ROOT_PATH_MODE_INCLUDE ONLY)
 set(CMAKE_FIND_ROOT_PATH_MODE_PACKAGE ONLY)
+set(CMAKE_BUILD_TYPE RelWithDebInfo)
 TOOLCHAIN_EOF
 
     cat >> "$TOOLCHAIN_FILE" << EOF
 set(CMAKE_C_COMPILER ${TOOLCHAIN_CC})
 set(CMAKE_CXX_COMPILER ${TOOLCHAIN_CXX})
-set(CMAKE_C_FLAGS "-nostdlib -ffreestanding -mcpu=cortex-a53 -mstrict-align ${MUSLLIBC_INCLUDES} \${CMAKE_C_FLAGS}" CACHE STRING "" FORCE)
-set(CMAKE_CXX_FLAGS "-nostdlib -ffreestanding -mcpu=cortex-a53 -mstrict-align ${MUSLLIBC_INCLUDES} \${CMAKE_CXX_FLAGS}" CACHE STRING "" FORCE)
+set(CMAKE_C_FLAGS "-nostdlib -ffreestanding -g -mcpu=cortex-a53 -mstrict-align ${MUSLLIBC_INCLUDES} \${CMAKE_C_FLAGS}" CACHE STRING "" FORCE)
+set(CMAKE_CXX_FLAGS "-nostdlib -ffreestanding -g -mcpu=cortex-a53 -mstrict-align ${MUSLLIBC_INCLUDES} \${CMAKE_CXX_FLAGS}" CACHE STRING "" FORCE)
 EOF
 
     echo "Toolchain file: $TOOLCHAIN_FILE"
-
-    FW_DIR="$SCRIPT_DIR/firmware"
-    if [ -d "$FW_DIR" ]; then
-        echo "Removing previous firmware workspace..."
-        rm -rf "$FW_DIR"
-    fi
-
-    echo "Creating micro-ROS firmware workspace (cloning repos)..."
-    pushd "$SCRIPT_DIR" > /dev/null
-    ros2 run micro_ros_setup create_firmware_ws.sh generate_lib
-    popd > /dev/null
-
-    echo "Configuring colcon.meta for seL4 (custom transport only)..."
-    python3 -c "
-import json
-with open('$FW_DIR/mcu_ws/colcon.meta') as f:
-    meta = json.load(f)
-meta['names']['microxrcedds_client']['cmake-args'] += [
-    '-DUCLIENT_PROFILE_UDP=OFF',
-    '-DUCLIENT_PROFILE_TCP=OFF',
-    '-DUCLIENT_PROFILE_SERIAL=OFF',
-    '-DUCLIENT_PROFILE_DISCOVERY=OFF',
-    '-DUCLIENT_PROFILE_CUSTOM_TRANSPORT=ON'
-]
-meta['names']['rmw_microxrcedds']['cmake-args'] += [
-    '-DRMW_UXRCE_TRANSPORT=custom'
-]
-with open('$FW_DIR/mcu_ws/colcon.meta', 'w') as f:
-    json.dump(meta, f, indent=4)
-"
+    echo "Build type: RelWithDebInfo (debug symbols enabled for rclc and all packages)"
 
     echo "Cross-compiling with seL4 toolchain..."
-    pushd "$SCRIPT_DIR" > /dev/null
-    ros2 run micro_ros_setup build_firmware.sh "$(realpath "$TOOLCHAIN_FILE")"
+    pushd "$FW_DIR/mcu_ws" > /dev/null
+    rm -rf build install log
+
+    colcon build \
+        --merge-install \
+        --packages-ignore-regex='.*_cpp' \
+        --metas colcon.meta \
+        --cmake-args \
+        "--no-warn-unused-cli" \
+        -DCMAKE_POSITION_INDEPENDENT_CODE:BOOL=OFF \
+        -DTHIRDPARTY=ON \
+        -DBUILD_SHARED_LIBS=OFF \
+        -DBUILD_TESTING=OFF \
+        -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+        -DCMAKE_TOOLCHAIN_FILE="$SCRIPT_DIR/$TOOLCHAIN_FILE" \
+        -DCMAKE_VERBOSE_MAKEFILE=ON
+
+    echo "Packing libmicroros.a..."
+    BUILD_OUT_DIR="$FW_DIR/build"
+    mkdir -p "$BUILD_OUT_DIR"
+    TMP_PACK="$FW_DIR/libmicroros"
+    mkdir -p "$TMP_PACK"
+    pushd "$TMP_PACK" > /dev/null
+    for file in $(find "$FW_DIR/mcu_ws/install/lib/" -name '*.a'); do
+        folder=$(echo "$file" | sed -E "s/(.+)\/(.+).a/\2/")
+        mkdir -p "$folder"
+        cd "$folder"
+        ar x "$file"
+        for f in *; do
+            mv "$f" "../${folder}-${f}"
+        done
+        cd ..
+        rm -rf "$folder"
+    done
+    ar rc libmicroros.a $(ls *.o *.obj 2> /dev/null)
+    cp libmicroros.a "$BUILD_OUT_DIR/"
+    ranlib "$BUILD_OUT_DIR/libmicroros.a"
+    cp -R "$FW_DIR/mcu_ws/install/include" "$BUILD_OUT_DIR/"
+    rm -f $(find "$BUILD_OUT_DIR/include" -type f -not -name "*.h" -not -name "*.hpp") 2>/dev/null || true
+    find "$BUILD_OUT_DIR/include" -type d -empty -delete 2>/dev/null || true
+    popd > /dev/null
+    rm -rf "$TMP_PACK"
     popd > /dev/null
 
     if [ -f "$FW_DIR/build/libmicroros.a" ]; then

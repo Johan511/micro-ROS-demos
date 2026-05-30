@@ -48,11 +48,10 @@ CFLAGS := -nostdlib -ffreestanding -g -O0 -Wall \
           -I$(BOARD_DIR)/include \
           -I$(UROS_BUILD_DIR)/include \
           -DBOARD_$(MICROKIT_BOARD) \
-          -DRMW_UXRCE_TRANSPORT_CUSTOM \
           -DBUILD_CUSTOM_TRANSPORT \
           $(CFLAGS_ARCH)
 
-LDFLAGS := -L$(MUSLLIBC_BUILD_DIR)/lib -L$(BOARD_DIR)/lib -L$(UROS_BUILD_DIR)/lib -nostartfiles
+LDFLAGS := -L$(MUSLLIBC_BUILD_DIR)/lib -L$(BOARD_DIR)/lib -L$(UROS_BUILD_DIR)/lib -nostartfiles -Wl,--allow-multiple-definition
 
 IMAGE_FILE := $(BUILD_DIR)/loader.img
 REPORT_FILE := $(BUILD_DIR)/report.txt
@@ -77,6 +76,18 @@ CFLAGS := $(filter-out -fsanitize=undefined -fsanitize-trap=undefined, $(CFLAGS)
 
 all: $(IMAGE_FILE)
 
+$(BUILD_DIR)/emutls.o: stubs/emutls.c | $(BUILD_DIR)
+	$(CC) -c $(CFLAGS) $< -o $@
+
+$(BUILD_DIR)/errno.o: stubs/errno.c | $(BUILD_DIR)
+	$(CC) -c $(CFLAGS) $< -o $@
+
+$(BUILD_DIR)/heap_stub.o: stubs/heap_stub.c | $(BUILD_DIR)
+	$(CC) -c $(CFLAGS) $< -o $@
+
+$(BUILD_DIR)/clock_stub.o: stubs/clock_stub.c | $(BUILD_DIR)
+	$(CC) -c $(CFLAGS) $< -o $@
+
 $(BUILD_DIR)/ping_pong_component.o: ping_pong_component.c | $(BUILD_DIR)
 	$(CC) -c $(CFLAGS) $< -o $@
 
@@ -90,7 +101,7 @@ $(BUILD_DIR)/global_data.o: vmm/src/global_data.S $(KERNEL_IMAGE) $(DTB_IMAGE) $
 		-DVM_INITRD_IMAGE_PATH=\"$(INITRD_IMAGE)\" \
 		$< -o $@
 
-$(BUILD_DIR)/ping_pong_component.elf: $(BUILD_DIR)/ping_pong_component.o
+$(BUILD_DIR)/ping_pong_component.elf: $(BUILD_DIR)/ping_pong_component.o $(BUILD_DIR)/emutls.o $(BUILD_DIR)/errno.o $(BUILD_DIR)/heap_stub.o $(BUILD_DIR)/clock_stub.o $(UROS_BUILD_DIR)/lib/libmicroros.a
 	$(LD) $(LDFLAGS) $^ -lmicroros -lmicrokit -lc -Tmicrokit.ld -o $@
 
 $(BUILD_DIR)/vmm.elf: $(BUILD_DIR)/vmm.o $(BUILD_DIR)/global_data.o libvmm.a libsddf_util_debug.a

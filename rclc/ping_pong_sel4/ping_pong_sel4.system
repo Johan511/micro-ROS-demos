@@ -7,13 +7,13 @@
     <memory_region name="gic_vcpu" size="0x1_000" phys_addr="0x8_040_000" />
     <memory_region name="uart" size="0x1_000" phys_addr="0x9_000_000" />
 
-    <protection_domain name="ping_pong" priority="254">
+    <protection_domain name="ping_pong" priority="100" stack_size="0x4000">
         <program_image path="ping_pong_component.elf" />
         <map mr="pp2vmm" vaddr="0x5_000_000" perms="rw" cached="false" setvar_vaddr="pp2vmm" />
         <map mr="vmm2pp" vaddr="0x5_100_000" perms="rw" cached="false" setvar_vaddr="vmm2pp" />
     </protection_domain>
 
-    <protection_domain name="vmm" priority="101">
+    <protection_domain name="vmm" priority="100">
         <program_image path="vmm.elf" />
         <map mr="guest_ram" vaddr="0x4_000_0000" perms="rw" setvar_vaddr="guestRam" />
         <map mr="pp2vmm" vaddr="0x5_000_000" perms="rw" cached="false" setvar_vaddr="pp2vmm" />

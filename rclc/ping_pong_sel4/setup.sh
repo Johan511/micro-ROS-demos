@@ -83,3 +83,42 @@ echo "Environment configured:"
 echo "  MICROKIT_SDK=$MICROKIT_SDK"
 echo "  TOOLCHAIN_DIR=$TOOLCHAIN_DIR"
 echo "  PATH includes: $TOOLCHAIN_DIR/bin"
+
+FW_DIR="$SCRIPT_DIR/firmware"
+if [ -d "$FW_DIR" ]; then
+    echo "micro-ROS firmware workspace already exists at $FW_DIR"
+else
+    echo "Creating micro-ROS firmware workspace (cloning repos including rclc)..."
+    if [ ! -f /opt/ros/humble/setup.bash ]; then
+        echo "ERROR: ROS 2 Humble not found at /opt/ros/humble"
+        echo "Install ROS 2 Humble first, then re-run ./setup.sh"
+        exit 1
+    fi
+    source /opt/ros/humble/setup.bash
+    if [ -f /microros_ws/install/setup.bash ]; then
+        source /microros_ws/install/setup.bash
+    fi
+
+    pushd "$SCRIPT_DIR" > /dev/null
+    ros2 run micro_ros_setup create_firmware_ws.sh generate_lib
+
+    python3 -c "
+import json
+with open('$FW_DIR/mcu_ws/colcon.meta') as f:
+    meta = json.load(f)
+meta['names']['microxrcedds_client']['cmake-args'] += [
+    '-DUCLIENT_PROFILE_UDP=OFF',
+    '-DUCLIENT_PROFILE_TCP=OFF',
+    '-DUCLIENT_PROFILE_SERIAL=OFF',
+    '-DUCLIENT_PROFILE_DISCOVERY=OFF',
+    '-DUCLIENT_PROFILE_CUSTOM_TRANSPORT=ON'
+]
+meta['names']['rmw_microxrcedds']['cmake-args'] += [
+    '-DRMW_UXRCE_TRANSPORT=custom'
+]
+with open('$FW_DIR/mcu_ws/colcon.meta', 'w') as f:
+    json.dump(meta, f, indent=4)
+"
+    popd > /dev/null
+    echo "micro-ROS firmware workspace created"
+fi

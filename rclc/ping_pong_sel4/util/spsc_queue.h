@@ -2,12 +2,10 @@
 #include <stdint.h>
 #include <stdbool.h>
 
+extern void seL4_Yield(void); 
+
 static inline void pause_instr(void) {
-#if defined(__aarch64__)
-    __asm__ volatile("yield" ::: "memory");
-#elif defined(__x86_64__) || defined(__i386__)
-    __asm__ volatile("pause" ::: "memory");
-#endif
+  seL4_Yield();
 }
 
 typedef struct spsc_queue_t {
@@ -57,6 +55,12 @@ static inline char *spsc_new_block(spsc_queue_t *q) {
   uint64_t back = q->producerCachedBack;
   back &= (1ull << q->log2Capacity) - 1ull;
   return q->begin + back * (1ull << q->log2BlockSize);
+}
+
+static inline bool spsc_empty(spsc_queue_t *q)
+{
+  q->consumerCachedBack = __atomic_load_n(&q->back, __ATOMIC_ACQUIRE);
+  return q->consumerCachedBack == q->consumerCachedFront;
 }
 
 static inline void spsc_pop(spsc_queue_t *q) {
