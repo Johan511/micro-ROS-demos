@@ -41,8 +41,8 @@ size_t custom_transport_seL4_write(uxrCustomTransport *, const uint8_t *buf, siz
 size_t custom_transport_seL4_read(uxrCustomTransport *, uint8_t *buf, size_t len, int timeout, uint8_t *errcode);
 
 void send_impl(std_msgs__msg__Header *hdr, rcl_publisher_t *publisher);
-void send_ping() { send_impl(&outgoingPing, &pingPublisher); microkit_dbg_puts("sent_ping"); }
-void send_pong() { send_impl(&outgoingPong, &pongPublisher); microkit_dbg_puts("sent_pong"); }
+void send_ping() { send_impl(&outgoingPing, &pingPublisher); microkit_dbg_puts("sent_ping\n"); }
+void send_pong() { send_impl(&outgoingPong, &pongPublisher); microkit_dbg_puts("sent_pong\n"); }
 
 void heap_init(void);
 void init(void) { heap_init(); }
@@ -111,7 +111,7 @@ void transport_init()
     RCCHECK(rclc_support_init(&support, 0, NULL, &allocator));
     RCCHECK(rclc_node_init_default(&node, "pingpong_node", "", &support));
 
-    RCCHECK(rclc_publisher_init_default(&pingPublisher, &node,
+    RCCHECK(rclc_publisher_init_best_effort(&pingPublisher, &node,
               ROSIDL_GET_MSG_TYPE_SUPPORT(std_msgs, msg, Header), "/microROS/ping"));
     RCCHECK(rclc_publisher_init_best_effort(&pongPublisher, &node,
               ROSIDL_GET_MSG_TYPE_SUPPORT(std_msgs, msg, Header), "/microROS/pong"));
